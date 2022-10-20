@@ -9,4 +9,4 @@ const pool = new Pool({
     connectionString: connectionString
 })
 
-export {pool}
+export {pool, connectionString}
