@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import pkg from 'pg'
+import pkg from 'pg';
 const  {Pool} = pkg;
 
 dotenv.config();
@@ -9,4 +9,5 @@ const pool = new Pool({
     connectionString: connectionString
 })
 
-export {pool, connectionString}
+export { connectionString, pool };
+
