@@ -91,7 +91,7 @@ const queryCustomerCartItems = (customerId) => {
     return clientQuery(`SELECT * FROM customer_cart_item WHERE customer_id=$1`, [customerId])
 }
 
-const queryTopSellingProducts = (productCount = 5) => {
+const queryTopSellingProductsTransaction = (productCount = 5) => {
     return clientQuery(`SELECT * FROM product ORDER BY quantity_sold DESC LIMIT $1`, [productCount])
 }
 
@@ -127,6 +127,29 @@ const queryAddProductCategory = (productId, category) => {
     return clientQuery(`INSERT INTO product_category(product_id, category_id)
                         VALUES($1, $2)`, [productId, category])
 }
+
+const queryFiveDayRevenue = () => {
+    return clientQuery(`SELECT date(transaction_date) as t_d,SUM(total_cost)
+                        FROM transaction
+                        GROUP BY t_d
+                        ORDER BY t_d DESC
+                        LIMIT 5`)
+}
+
+const queryAddUser = (email, password) => {
+    return clientQuery(`INSERT INTO user_account(email, password) VALUES($1, $2)`, [email, password])
+}
+
+const queryAddCustomer = (firstName, lastName, email, phoneNumber) => {
+    return clientQuery(`INSERT INTO customer(first_name, last_name, email, phone_number) 
+                        VALUES($1, $2, $3, $4)`, [firstName, lastName, email, phoneNumber])
+}
+
+const queryAddEmployee = (firstName, lastName, email) => {
+    return clientQuery(`INSERT INTO employee(first_name, last_name, email) 
+                        VALUES($1, $2, $3)`, [firstName, lastName, email])
+}
+
 
 //Pool queries
 
@@ -182,10 +205,17 @@ export function queryAddReview(productId, customerId, ratingNumber, reviewHeadin
                       VALUES($1, $2, $3, $4, $5)`, [productId, customerId, ratingNumber, reviewHeading, comment])
 }
 
-export function queryTopSellingProductsByCategory(category, productCount = 5) {
-    return poolQuery(`SELECT product.* FROM product, product_category, category
-    WHERE category.name =$1 AND product_category.category_id = category.name AND product_category.product_id = product.product_number
-    ORDER BY quantity_sold DESC LIMIT $2`, [category, productCount])
+export function queryTopSellingProducts(category, productCount = 5) {
+    if (category) {
+        return poolQuery(`SELECT product.* FROM product, product_category, category
+                          WHERE category.name =$1 AND product_category.category_id = category.name AND product_category.product_id = product.product_number
+                          ORDER BY quantity_sold DESC LIMIT $2`, [category, productCount])
+    } else {
+        return poolQuery(`SELECT product.* FROM product, product_category, category
+                          WHERE  product_category.category_id = category.name AND product_category.product_id = product.product_number
+                          ORDER BY quantity_sold DESC LIMIT $1`, [productCount])
+    }
+
 }
 
 export function queryTopCategories() {
@@ -199,9 +229,10 @@ export function queryProductAndImages(productId) {
         connectionString: connectionString
     })
     return executeResultTransaction(async () => {
-        let product = await queryProductTransaction(productId);
-        let productImages = await queryImagesTransaction(productId);
-        return { "product": product, "product_images": productImages }
+        return {
+            product: await queryProductTransaction(productId),
+            productImages: await queryImagesTransaction(productId)
+        }
     })
 }
 
@@ -249,11 +280,10 @@ export function queryProductStats() {
         connectionString: connectionString
     })
     return executeResultTransaction(async () => {
-        let stats = {}
-
-        stats["top_selling_products"] = await queryTopSellingProducts()
-        stats["five_day_revue"] = await queryFiveDayRevenue()
-        return stats
+        return {
+            topSellingProducts: await queryTopSellingProductsTransaction(),
+            fiveDayRevenue: await queryFiveDayRevenue()
+        }
     })
 }
 
@@ -276,5 +306,26 @@ export function queryCustomerCartItemProducts(customerId) {
     })
 }
 
+export function queryAddEmployeeUser(firstName, lastName, email, password) {
+    client = new Client({
+        connectionString: connectionString
+    })
+
+    return executeTransaction(async () => {
+        await queryAddUser(email, password)
+        await queryAddEmployee(firstName, lastName, email)
+    })
+}
+
+export function queryAddCustomerUser(firstName, lastName, phoneNumber, email, password) {
+    client = new Client({
+        connectionString: connectionString
+    })
+    console.log(firstName, lastName,phoneNumber, email )
+    return executeTransaction(async () => {
+        await queryAddUser(email, password)
+        await queryAddCustomer(firstName, lastName, email, phoneNumber)
+    })
+}
 
 // export { queryProduct, queryProductAndImages, queryNProducts, queryProducts, queryAddProductAndImages, queryDeleteProduct, queryTransactions, queryBuyItems, queryCustomerTransactions, queryProductStats, queryCustomerCartItems, queryCustomerCartItem, queryAddCustomerCartItem, queryDeleteCartItem }

@@ -1,81 +1,100 @@
 import * as dbStatement from "./dbStatements.js"
+import { pool } from "./dbConfig.js";
 import bodyParser from 'body-parser';
 import multer from 'multer'
-
-
-// let bcrypt = require("bcrypt")
+import bcrypt from "bcrypt"
+import passport from "passport"
+import session from "express-session"
+import connectPgSimple from "connect-pg-simple"
 // let initializePassport = require('./passport_config.js')
-
+import { initialize as initializePassport } from "./passport_config.js"
 import express from 'express';
+import employee from "./routes/employee.js"
+import * as responseHelpers from "./responseHelpers.js"
+const pgSession = connectPgSimple(session)
 const app = express()
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.json());
 
-//Multer init
+initializePassport(passport, async (username) => {
+    return new Promise((resolve, reject) => {
+        pool.query(`
+          SELECT * FROM useraccount WHERE email=$1 LIMIT 1`
+            , [username], (err, results) => {
+                if (err) {
+                    console.log(err)
+                    return reject(err);
+                } else {
+                    console.log(results['rows'][0])
+                    resolve(results['rows'][0])
+                }
+            }
+        )
+    })
+},
+    //   (id) => {
+    //     return new Promise((resolve, reject) => {
+    //       pool.query(`
+    //           SELECT * FROM users WHERE id=$1 LIMIT 1`
+    //         , [id], (err, results) => {
+    //           if (err) {
+    //             console.log(err)
+    //             return reject(err);
+    //           } else {
+    //             resolve(results['rows'][0])
+    //           }
+    //         }
+    //       )
+    //     })
+    //   }
+);
 
-var Storage = multer.diskStorage({
-    destination: function (req, file, callback) {
-        callback(null, 'product_images')
-    },
-    filename: (req, file, callback) => {
-        callback(null, file.originalname)
+app.use(session(
+    {
+        secret: process.env.SESSION_SECRET,
+        resave: false,
+        saveUninitialized: false,
+        cookie: { maxAge: 24 * 60 * 60 * 1000 },
+        unset: "destroy",
+        store: new pgSession({
+            pool: pool,
+            tableName: 'user_sessions',
+        })
     }
-})
+))
 
+app.use(passport.initialize())
+app.use(passport.session())
 
-const upload = multer({ storage: Storage })
+app.use("/employee", employee)
+
 const memoryUpload = multer({ storage: multer.memoryStorage() })
+
 const PORT = 3000;
 const PRODUCT_IMAGES_DIRECTORY = "product_images"
-
-// Helper functions
-
-function sendError(res, message) {
-    res.json({
-        "result": {
-            success: false,
-            message: message
-        }
-    })
-}
-
-function sendSuccessResponse(res) {
-    res.json({
-        "result": {
-            success: true
-        }
-    })
-}
-
-function sendDataResponse(res, data) {
-    res.json({
-        "data": data
-    })
-}
 
 app.get("/", (req, res) => {
 
     const { category } = req.query
     // console.log(req.body)
-
-    dbStatement.queryTopSellingProductsByCategory(category).then((topSellingProducts) => {
+    dbStatement.queryTopSellingProducts(category).then((topSellingProducts) => {
         //Might change to not be top categories
         dbStatement.queryTopCategories().then((topCategories) => {
-            sendDataResponse(res, {
+            responseHelpers.sendDataResponse(res, {
                 topSellingProducts,
                 topCategories
             })
         }).catch((err) => {
             console.log(err)
-            sendError(res, "Error while getting top categories")
+            responseHelpers.sendError(res, "Error while getting top categories")
         })
     }).catch((err) => {
         console.log(err)
-        sendError(res, "Error while retrieving top selling products")
+        responseHelpers.sendError(res, "Error while retrieving top selling products")
     })
 
     // let result = dbStatement.queryProductStats().then((products) => {
-    //     sendDataResponse(res, products)
+    //     responseHelpers.sendDataResponse(res, products)
     // })
 })
 
@@ -94,17 +113,17 @@ app.get("/search", (req, res) => {
         main_image_link: "https://cdn.rushordertees.com/design/ZoomImage.php?src=NTUyMTM2Mw_f&style=RT2000&colorCode=WHT&x=240&y=300&width=880&height=880&scale=1.7&watermark=false&autoInvertDesign=true"
     }]
 
-    sendDataResponse(res, result)
+    responseHelpers.sendDataResponse(res, result)
 })
 
 app.get("/products/:id", (req, res) => {
 
     const { id } = req.params
     dbStatement.queryProductAndImages(id).then((productAndImages) => {
-        sendDataResponse(res, productAndImages)
+        responseHelpers.sendDataResponse(res, productAndImages)
     }).catch((err) => {
         console.error(err)
-        sendError(res, "Error while getting product")
+        responseHelpers.sendError(res, "Error while getting product")
     })
 })
 
@@ -113,10 +132,10 @@ app.delete("products/:id/remove_from_cart", (req, res) => {
     const customerId = 1 // "GET_FROM_SESSION"
 
     dbStatement.queryDeleteCartItem(customerId, productId).then(() => {
-        sendSuccessResponse(res)
+        responseHelpers.sendSuccessResponse(res)
     }).catch((err) => {
         console.error(err)
-        sendError(res, "Error deleting cart item")
+        responseHelpers.sendError(res, "Error deleting cart item")
     })
 
 })
@@ -136,7 +155,7 @@ app.post("/products/:id/add_to_cart", (req, res) => {
             })
         }).catch((err) => {
             console.error(err)
-            sendError(res, "Error while adding cart items")
+            responseHelpers.sendError(res, "Error while adding cart items")
         })
     })
 })
@@ -150,7 +169,7 @@ app.get("/cart", (req, res) => {
         })
     }).catch((err) => {
         console.error(err)
-        sendError(res, "Error while fetching cart items")
+        responseHelpers.sendError(res, "Error while fetching cart items")
     })
 })
 
@@ -166,7 +185,7 @@ app.post("/buy", memoryUpload.none(), (req, res) => {
         })
     }).catch((err) => {
         console.error(err)
-        sendError(res, "Error while buying item")
+        responseHelpers.sendError(res, "Error while buying item")
     })
 })
 
@@ -179,87 +198,11 @@ app.get("/orders", (req, res) => {
         })
     }).catch((err) => {
         console.error(err)
-        sendError(res, "Error while obtaining transactions")
+        responseHelpers.sendError(res, "Error while obtaining transactions")
     })
 })
 
-/* Employee Routes*/
 
-app.get("/employee", (req, res) => {
-    dbStatement.queryProductStats().then((stats) => {
-        res.json({
-            "data": stats
-        })
-    }).catch((err) => {
-        console.error(err)
-        sendError("Error occured retrieving product stats")
-    })
-})
-
-app.get("/employee/products", (req, res) => {
-
-    const { product_count: productCount } = req.query
-    dbStatement.queryNProducts(productCount).then((products) => {
-        res.json({
-            "data": products
-        })
-    }).catch((err) => {
-        console.error(err)
-        sendError(res, "Error occured while getting products")
-    })
-})
-
-let productImageUploads = upload.fields([{ name: "main_image", maxCount: 1 }, { name: "other_image", maxCount: 12 }])
-
-app.post("/employee/products", productImageUploads, (req, res) => {
-    const { product_name: productName, product_number: productNumber, quantity, price, description, weight } = req.body;
-    const productCategories = JSON.parse(req.body.categories)
-    let productColumnArr = [productName, productNumber, quantity, "inactive", price, description, weight]
-    let secondaryImageNames = req.files.other_image.map((other_image) => other_image.originalname)
-    dbStatement.queryAddProductAndImages(productNumber, productColumnArr, productCategories,req.files.main_image[0].originalname, secondaryImageNames).then(() => {
-        res.json({
-            success: true,
-        })
-    }).catch((err) => {
-        console.error(err)
-        sendError(res, "Error while adding product")
-    })
-})
-
-app.get("/employee/products/:id/", (req, res) => {
-    const { id } = req.params
-    dbStatement.queryProduct(id).then((product) => {
-        res.json({
-            "data": product
-        })
-    }).catch((err) => {
-        console.error(err)
-        sendError(res, "Error while fetching product")
-    })
-})
-
-app.delete("/employee/products/:id", (req, res) => {
-    const { id } = req.params
-    dbStatement.queryDeleteProduct(id).then(() => {
-        res.json({
-            success: true,
-        })
-    }).catch((err) => {
-        console.error(err)
-        sendError(res, "Error while deleting product")
-    })
-})
-
-app.get("/employee/orders", (req, res) => {
-    dbStatement.queryTransactions().then((transactions) => {
-        res.json({
-            "data": transactions
-        })
-    }).catch((err) => {
-        console.error(err)
-        sendError(res, "Error while obtaining transactions")
-    })
-})
 
 app.get("/products/:id/reviews", (req, res) => {
     const { id } = req.params
@@ -296,9 +239,38 @@ app.post("/products/:id/review", (req, res) => {
         })
     }).catch((err) => {
         console.error(err)
-        sendError(res, "Error while adding review")
+        responseHelpers.sendError(res, "Error while adding review")
     });
 })
+
+
+//AUTHENTICATION
+
+app.post("/register", async (req, res) => {
+    const { first_name: firstName, last_name: lastName, phone_number: phoneNumber, email, password } = req.body
+
+    const hashedPassword = await bcrypt.hash(password, 10)
+
+    dbStatement.queryAddCustomerUser(firstName, lastName, phoneNumber, email, hashedPassword).then(() => {
+        responseHelpers.sendSuccessResponse(res)
+    }).catch((err) => {
+        console.log(err)
+        responseHelpers.sendError(res, "Error while adding customer user")
+    })
+
+})
+
+app.get("/login", (req, res) => {
+    const { username, password } = req.body
+    res.json({
+        login: "page"
+    })
+})
+
+app.post("/login", passport.authenticate('local', {
+    successRedirect: "/user", //TODO:Change to user route after creating one. 
+    failureRedirect: "/login",
+}))
 
 app.listen(PORT, () => {
     console.log("listening on port " + PORT)

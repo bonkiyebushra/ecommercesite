@@ -1,7 +1,7 @@
 import passportLocal from "passport-local"
 const LocalStrategy = passportLocal.Strategy
 import bcrypt from "bcrypt"
-import { ROLES } from "./utils/roles.js"
+// import { ROLES } from "./utils/roles.js"
 
 function initialize(passport, getUser, getUserById) {
     const authenticateUser = async (username, password, done) => {
@@ -15,10 +15,10 @@ function initialize(passport, getUser, getUserById) {
             try {
                 if (await bcrypt.compare(password, user.password)) {
                     console.log("Password matched")
-                    if (user.type === ROLES['unverified']) {
-                        console.log("User not verified")
-                        return done(null, false, {message: "User not verified"});
-                    }
+                    // if (user.type === ROLES['unverified']) {
+                    //     console.log("User not verified")
+                    //     return done(null, false, {message: "User not verified"});
+                    // }
                     return done(null, user)
                 } else {
                     console.log("Password no match")
